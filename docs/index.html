@@ -62,6 +62,12 @@
     <div class="muted" id="statusList"></div>
   </section>
 
+  <section class="card" id="installCard" hidden>
+    <h2>📲 Встановити застосунок</h2>
+    <button id="installBtn" hidden>Встановити</button>
+    <div class="muted" id="installHelp"></div>
+  </section>
+
   <section class="card">
     <h2>🔔 Сповіщення</h2>
     <div class="muted">Позначте свої регіони нижче й підпишіться, і сповіщення про тривогу та відбій приходитимуть, навіть коли застосунок закрито.</div>
@@ -231,6 +237,40 @@
     if (SUBSCRIBE_API) fetch(`${SUBSCRIBE_API}/unsubscribe`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint }) }).catch(() => {});
     setSubUI('Ви відписалися від сповіщень.');
   }
+
+  // ---------- Встановлення PWA ----------
+  const inAppBrowser = !!window.TelegramWebviewProxy || /Telegram|Instagram|FBAN|FBAV|Line\//i.test(navigator.userAgent);
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  let installEvent = null;
+
+  function showInstallHelp() {
+    if (standalone) return;
+    let text;
+    if (inAppBrowser) text = 'Ви відкрили сторінку у вбудованому браузері (наприклад, Telegram), де встановлення недоступне. Натисніть «⋮» → «Відкрити в браузері» (Chrome або Safari).';
+    else if (isIOS) text = 'Safari: натисніть «Поділитися» (квадрат зі стрілкою) → «На початковий екран» → «Додати».';
+    else if (isAndroid) text = 'Chrome: меню «⋮» (праворуч угорі) → «Встановити застосунок» або «Додати на головний екран».';
+    else text = 'Chrome або Edge: значок встановлення праворуч в адресному рядку, або меню «⋮» → «Трансляція, збереження та надсилання» → «Встановити сторінку як застосунок».';
+    $('installHelp').textContent = text;
+    $('installCard').hidden = false;
+  }
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();          // показуємо власну кнопку замість міні-панелі Chrome
+    installEvent = e;
+    $('installBtn').hidden = false;
+    $('installHelp').textContent = '';
+    $('installCard').hidden = false;
+  });
+  $('installBtn').addEventListener('click', async () => {
+    if (!installEvent) return;
+    installEvent.prompt();
+    await installEvent.userChoice;
+    installEvent = null;
+    $('installBtn').hidden = true;
+  });
+  window.addEventListener('appinstalled', () => { $('installCard').hidden = true; });
+  // Якщо браузер не запропонував встановлення сам — показуємо інструкцію.
+  setTimeout(() => { if (!installEvent) showInstallHelp(); }, 2500);
 
   $('subBtn').addEventListener('click', subscribe);
   $('unsubBtn').addEventListener('click', unsubscribe);

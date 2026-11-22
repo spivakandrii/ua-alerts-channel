@@ -1,5 +1,5 @@
 // Service worker: офлайн-оболонка застосунку та показ push-сповіщень.
-const CACHE = 'alerts-v2';
+const CACHE = 'alerts-v3';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
