@@ -9,7 +9,9 @@
 
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 
-const STATE_FILE = 'state.json';
+// Стан публікується через GitHub Pages — його читає PWA (docs/index.html).
+const STATE_FILE = 'docs/status.json';
+const CHANGES_FILE = 'changes.json'; // для send-push.mjs
 const SOURCE = 'https://ubilling.net.ua/aerialalerts/';
 const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHANNEL_ID: chatId, REGIONS = '', DRY_RUN } = process.env;
 const filter = REGIONS.split(',').map(s => s.trim()).filter(Boolean);
@@ -56,6 +58,12 @@ async function send(text) {
   if (!body.ok) throw new Error(`Telegram: ${body.description || res.status}`);
 }
 
+async function saveState(active, changes) {
+  const status = { updated: new Date().toISOString(), regions: Object.keys(states), active };
+  await writeFile(STATE_FILE, JSON.stringify(status, null, 2) + '\n');
+  if (changes) await writeFile(CHANGES_FILE, JSON.stringify(changes));
+}
+
 async function setOutput(changed) {
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `changed=${changed}\n`);
 }
@@ -80,7 +88,7 @@ if (!prev) {
     `📡 <b>Моніторинг тривог запущено</b>\n\n` +
     (list.length ? `Зараз тривога:\n${list.map(n => `• ${esc(n)}`).join('\n')}` : 'Зараз тривог немає 🟢') +
     `\n\n🕐 ${kyivTime()}`);
-  await writeFile(STATE_FILE, JSON.stringify({ active }, null, 2));
+  await saveState(active, null);
   await setOutput(true);
   process.exit(0);
 }
@@ -94,15 +102,14 @@ if (!started.length && !ended.length) {
   process.exit(0);
 }
 
+const durations = Object.fromEntries(ended.map(n => [n, states[n] ? duration(prev.active[n], states[n].changed) : '']));
 const parts = [];
 if (started.length) parts.push(`🔴 <b>Повітряна тривога!</b>\n${started.map(n => `• ${esc(n)}`).join('\n')}`);
-if (ended.length) parts.push(`🟢 <b>Відбій тривоги</b>\n${ended.map(n => {
-  const d = states[n] ? duration(prev.active[n], states[n].changed) : '';
-  return `• ${esc(n)}${d ? ` <i>(тривала ${d})</i>` : ''}`;
-}).join('\n')}`);
+if (ended.length) parts.push(`🟢 <b>Відбій тривоги</b>\n${ended.map(n =>
+  `• ${esc(n)}${durations[n] ? ` <i>(тривала ${durations[n]})</i>` : ''}`).join('\n')}`);
 parts.push(`🕐 ${kyivTime()}`);
 
 await send(parts.join('\n\n'));  // якщо надіслати не вдалося — стан не зберігаємо, повторимо наступного разу
-await writeFile(STATE_FILE, JSON.stringify({ active }, null, 2));
+await saveState(active, { started, ended, durations });
 await setOutput(true);
 console.log(`Надіслано: почалось ${started.length}, відбій ${ended.length}.`);

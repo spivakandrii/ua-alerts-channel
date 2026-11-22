@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write   # щоб публікувати docs/status.json для PWA
 
 jobs:
   check:
@@ -22,13 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Відновлюємо стан із попереднього запуску (найновіший кеш із префіксом).
-      - uses: actions/cache/restore@v4
-        with:
-          path: state.json
-          key: alerts-state-${{ github.run_id }}
-          restore-keys: alerts-state-
-
       - id: check
         run: node check-alerts.mjs
         env:
@@ -36,9 +29,21 @@ jobs:
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           REGIONS: ${{ vars.REGIONS }}
 
-      # Зберігаємо стан лише тоді, коли він змінився.
+      # Стан змінився — публікуємо його (GitHub Pages оновить сайт) і розсилаємо push.
       - if: steps.check.outputs.changed == 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: state.json
-          key: alerts-state-${{ github.run_id }}
+        name: Publish status.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/status.json
+          git commit -m "Оновлення статусу тривог" || exit 0
+          git push
+
+      - if: steps.check.outputs.changed == 'true' && hashFiles('changes.json') != '' && vars.SUBS_API != ''
+        name: Send Web Push
+        run: npm install --no-save --silent web-push@3 && node send-push.mjs
+        env:
+          SUBS_API: ${{ vars.SUBS_API }}
+          PUSH_ADMIN_TOKEN: ${{ secrets.PUSH_ADMIN_TOKEN }}
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}

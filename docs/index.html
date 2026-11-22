@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Тривоги</title>
+<meta name="description" content="Повітряні тривоги у вашому регіоні зі сповіщеннями">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --fg: #15171c; --muted: #646b78; --line: #e3e6eb;
+    --red: #d32f2f; --red-bg: #fdecec; --green: #2e7d32; --green-bg: #e8f5e9; --accent: #1f5fd1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161a; --card: #1d2026; --fg: #eef0f3; --muted: #9aa1ad; --line: #2c3038;
+      --red: #ff6b6b; --red-bg: #3a1f22; --green: #66bb6a; --green-bg: #1d3220; --accent: #7aa7ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 32px); }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 16px; }
+  #status { text-align: center; padding: 24px 16px; transition: background .3s; }
+  #status.alert { background: var(--red-bg); border-color: var(--red); }
+  #status.calm { background: var(--green-bg); border-color: var(--green); }
+  #statusIcon { font-size: 44px; line-height: 1; }
+  #statusTitle { font-size: 22px; font-weight: 700; margin-top: 8px; }
+  #status.alert #statusTitle { color: var(--red); }
+  #status.calm #statusTitle { color: var(--green); }
+  #statusList { margin-top: 6px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 12px 16px; cursor: pointer; background: var(--accent); color: #fff; width: 100%; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  .regions { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+  .region { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; user-select: none; font-size: 15px; }
+  .region input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
+  .region .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); flex: none; margin-left: auto; }
+  .region.on .dot { background: var(--red); box-shadow: 0 0 0 4px var(--red-bg); }
+  .region.mine { border-color: var(--accent); }
+  .row { display: flex; gap: 8px; margin-top: 12px; }
+  .row > * { flex: 1; }
+  #subState { margin-top: 10px; font-size: 14px; }
+  .hint { background: var(--bg); border-radius: 12px; padding: 10px 12px; font-size: 14px; margin-top: 12px; }
+  footer { margin-top: 24px; font-size: 13px; color: var(--muted); text-align: center; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Тривоги</h1>
+  <div class="muted" id="updated">Завантаження…</div>
+
+  <section class="card" id="status">
+    <div id="statusIcon">⏳</div>
+    <div id="statusTitle">Завантаження…</div>
+    <div class="muted" id="statusList"></div>
+  </section>
+
+  <section class="card">
+    <h2>🔔 Сповіщення</h2>
+    <div class="muted">Позначте свої регіони нижче й підпишіться, і сповіщення про тривогу та відбій приходитимуть, навіть коли застосунок закрито.</div>
+    <div class="row">
+      <button id="subBtn">Підписатися</button>
+      <button id="unsubBtn" class="secondary" hidden>Відписатися</button>
+    </div>
+    <div id="subState" class="muted"></div>
+    <div class="hint" id="iosHint" hidden>📱 На iPhone сповіщення працюють лише для встановленого застосунку: натисніть «Поділитися» → «На початковий екран», а тоді відкрийте його з іконки.</div>
+  </section>
+
+  <section class="card">
+    <h2>Мої регіони</h2>
+    <div class="regions" id="regions"></div>
+  </section>
+
+  <footer>
+    Неофіційний застосунок, дані з відкритих волонтерських джерел, можливі затримки.<br>
+    Не замінює офіційних засобів оповіщення — сирен, «Дії», застосунку «Повітряна тривога».
+  </footer>
+</main>
+
+<script>
+(() => {
+  // Адреса Cloudflare Worker, що зберігає підписки (див. worker/README.md). Порожньо — push вимкнено.
+  const SUBSCRIBE_API = '';
+  const VAPID_PUBLIC_KEY = 'BIbj5-BLRk6p-6iBIxG9OTU5ZChNrJGZsThuq1xBnNLF0Eapvt0-pSlilcweQTv9owvLQzd0il4jDS-RvSoEPos';
+  const POLL_MS = 20000;
+
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+
+  let mine = store.get('regions', []);
+  let status = null, prevActive = null, swReg = null, pushSub = null;
+
+  const kyiv = iso => new Intl.DateTimeFormat('uk-UA', { timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'long' }).format(new Date(iso));
+  // Час у джерелі — київський ("2026-11-22 17:33:31"), враховуємо літній/зимовий зсув.
+  const kyivOffsetMs = d => new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' })) - new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const sinceText = s => {
+    const asUtc = Date.parse(s.replace(' ', 'T') + 'Z');
+    const m = Math.round((Date.now() - (asUtc - kyivOffsetMs(new Date(asUtc)))) / 60000);
+    if (!Number.isFinite(m) || m < 0) return '';
+    if (m < 60) return `${m} хв`;
+    if (m < 48 * 60) return `${Math.floor(m / 60)} год ${m % 60} хв`;
+    return `${Math.floor(m / 1440)} дн`;
+  };
+
+  // ---------- Статус ----------
+  async function load() {
+    try {
+      const res = await fetch(`status.json?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      status = await res.json();
+      render();
+      notifyLocally();
+    } catch {
+      $('updated').textContent = 'Не вдалося оновити дані. Перевірте з\'єднання.';
+    }
+  }
+
+  function render() {
+    const active = status.active || {};
+    $('updated').textContent = `Остання зміна: ${kyiv(status.updated)}`;
+
+    const watch = mine.length ? mine : status.regions;
+    const alerting = watch.filter(n => n in active);
+    const box = $('status');
+    box.className = 'card ' + (alerting.length ? 'alert' : 'calm');
+    $('statusIcon').textContent = alerting.length ? '🔴' : '🟢';
+    $('statusTitle').textContent = alerting.length ? 'Повітряна тривога' : (mine.length ? 'У ваших регіонах тривоги немає' : 'Тривог немає');
+    $('statusList').textContent = alerting.length
+      ? alerting.map(n => { const t = sinceText(active[n]); return t ? `${n} — ${t}` : n; }).join(' · ')
+      : (mine.length ? mine.join(', ') : 'Оберіть свої регіони нижче');
+
+    const list = $('regions');
+    list.textContent = '';
+    for (const name of status.regions) {
+      const label = document.createElement('label');
+      label.className = 'region' + (name in active ? ' on' : '') + (mine.includes(name) ? ' mine' : '');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = mine.includes(name);
+      cb.addEventListener('change', () => toggleRegion(name, cb.checked));
+      const text = document.createElement('span');
+      text.textContent = name;
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.title = name in active ? 'Тривога' : 'Немає тривоги';
+      label.append(cb, text, dot);
+      list.append(label);
+    }
+  }
+
+  function toggleRegion(name, on) {
+    mine = on ? [...new Set([...mine, name])] : mine.filter(n => n !== name);
+    store.set('regions', mine);
+    render();
+    if (pushSub) saveSubscription(); // оновлюємо регіони на сервері
+  }
+
+  // Локальні сповіщення, поки сторінка відкрита (якщо push не налаштовано).
+  function notifyLocally() {
+    const active = status.active || {};
+    if (prevActive && !pushSub && Notification.permission === 'granted' && swReg) {
+      const watch = mine.length ? mine : status.regions;
+      const started = watch.filter(n => n in active && !(n in prevActive));
+      const ended = watch.filter(n => !(n in active) && n in prevActive);
+      if (started.length) swReg.showNotification('🔴 Повітряна тривога!', { body: started.join(', '), tag: 'alert', renotify: true, icon: 'icon-192.png', vibrate: [300, 100, 300, 100, 600] });
+      else if (ended.length) swReg.showNotification('🟢 Відбій тривоги', { body: ended.join(', '), tag: 'alert', renotify: true, icon: 'icon-192.png' });
+    }
+    prevActive = active;
+  }
+
+  // ---------- Push-підписка ----------
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+  function b64ToBytes(b64) {
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, c => c.charCodeAt(0));
+  }
+
+  function setSubUI(text) {
+    $('subState').textContent = text;
+    $('subBtn').hidden = !!pushSub;
+    $('unsubBtn').hidden = !pushSub;
+  }
+
+  async function saveSubscription() {
+    if (!SUBSCRIBE_API) return;
+    const res = await fetch(`${SUBSCRIBE_API}/subscribe`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ subscription: pushSub.toJSON(), regions: mine }),
+    });
+    if (!res.ok) throw new Error(`Сервер підписок відповів ${res.status}`);
+    setSubUI(`✅ Підписано: ${mine.length ? mine.join(', ') : 'усі регіони'}`);
+  }
+
+  async function subscribe() {
+    $('subBtn').disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setSubUI('Сповіщення заборонено в налаштуваннях браузера.'); return; }
+      if (!SUBSCRIBE_API) {
+        setSubUI('✅ Сповіщення приходитимуть, поки застосунок відкритий. Push у фоні ще не налаштовано.');
+        return;
+      }
+      pushSub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC_KEY) });
+      await saveSubscription();
+    } catch (e) {
+      setSubUI(`Не вдалося підписатися: ${e.message}`);
+    } finally {
+      $('subBtn').disabled = false;
+    }
+  }
+
+  async function unsubscribe() {
+    if (!pushSub) return;
+    const endpoint = pushSub.endpoint;
+    await pushSub.unsubscribe().catch(() => {});
+    pushSub = null;
+    if (SUBSCRIBE_API) fetch(`${SUBSCRIBE_API}/unsubscribe`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint }) }).catch(() => {});
+    setSubUI('Ви відписалися від сповіщень.');
+  }
+
+  $('subBtn').addEventListener('click', subscribe);
+  $('unsubBtn').addEventListener('click', unsubscribe);
+
+  async function init() {
+    if (isIOS && !standalone) $('iosHint').hidden = false;
+    if (pushSupported) {
+      swReg = await navigator.serviceWorker.register('sw.js');
+      await navigator.serviceWorker.ready;
+      pushSub = SUBSCRIBE_API ? await swReg.pushManager.getSubscription() : null;
+      if (pushSub) setSubUI(`✅ Підписано: ${mine.length ? mine.join(', ') : 'усі регіони'}`);
+      else if (Notification.permission === 'granted') setSubUI(SUBSCRIBE_API ? '' : '✅ Сповіщення приходитимуть, поки застосунок відкритий.');
+    } else {
+      $('subBtn').disabled = true;
+      setSubUI(isIOS ? '' : 'Цей браузер не підтримує сповіщення.');
+    }
+  }
+
+  init().catch(() => {});
+  load();
+  setInterval(load, POLL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+})();
+</script>
+</body>
+</html>
