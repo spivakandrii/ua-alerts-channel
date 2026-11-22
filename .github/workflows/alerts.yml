@@ -1,0 +1,44 @@
+name: Air alerts
+
+on:
+  # Основний тригер: cron-job.org викликає GitHub API (workflow_dispatch) щохвилини.
+  workflow_dispatch:
+  # Запасний тригер, якщо cron-job.org недоступний (GitHub запускає не частіше ніж раз на 5 хв і з затримками).
+  schedule:
+    - cron: '*/5 * * * *'
+
+# Запуски не перекриваються: поки триває один, наступний чекає в черзі.
+concurrency:
+  group: air-alerts
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      # Відновлюємо стан із попереднього запуску (найновіший кеш із префіксом).
+      - uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: alerts-state-${{ github.run_id }}
+          restore-keys: alerts-state-
+
+      - id: check
+        run: node check-alerts.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          REGIONS: ${{ vars.REGIONS }}
+
+      # Зберігаємо стан лише тоді, коли він змінився.
+      - if: steps.check.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: alerts-state-${{ github.run_id }}
