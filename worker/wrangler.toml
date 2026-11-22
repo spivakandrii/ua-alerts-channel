@@ -5,7 +5,6 @@ compatibility_date = "2026-11-01"
 [vars]
 ALLOWED_ORIGIN = "https://spivakandrii.github.io"
 
-# id заповнюється після `npx wrangler kv namespace create SUBS`
 [[kv_namespaces]]
 binding = "SUBS"
-id = "REPLACE_WITH_KV_ID"
+id = "16afb7b05f66423db0c9051d2d36ca62"
